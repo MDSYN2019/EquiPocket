@@ -50,6 +50,18 @@ class embed_bond_chem(torch.nn.Module):
         return all_bond_embed
 
 
+def get_interaction(x, edge_index, edge_attr=None):
+    """Build pairwise interaction features for an edge list.
+
+    Returns concatenated source and destination node features for every edge.
+    If ``edge_attr`` is provided, it is appended to the interaction vector.
+    """
+    src, dst = edge_index
+    interaction = torch.cat([x[src], x[dst]], dim=-1)
+    if edge_attr is not None:
+        interaction = torch.cat([interaction, edge_attr], dim=-1)
+    return interaction
+
 class Baseline_Models(nn.Module):
     def __init__(self, atom_channels, bond_channels, out_features, gat_depth=0, gcn_depth=0, gin_depth=0, gcn2_depth=0, schnet_depth=0, dimenet_depth=0, egnn_depth=0, cutoff=5):
         super(Baseline_Models, self).__init__()
@@ -116,6 +128,10 @@ class Baseline_Models(nn.Module):
 
         #  dimenet 
         if self.dimenet_depth > 0:
+            try:
+                from torch_geometric.nn.models import DimeNet
+            except ImportError:
+                from torch_geometric.nn import DimeNet
             self.dimenet = DimeNet(hidden_channels=out_features, out_channels=out_features,
                     cutoff=cutoff, num_blocks=6,
                     num_bilinear=8, num_spherical=7, num_radial=6)
