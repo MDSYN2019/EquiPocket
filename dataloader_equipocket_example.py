@@ -41,9 +41,10 @@ def make_toy_sample(num_nodes: int = 8) -> Data:
     edge_attr[:, 1] = 0  # ring flag token
     edge_attr[:, 2] = 1.0  # placeholder scalar
 
-    # Mark a subset of atoms as surface-associated (must include >=2 per graph).
-    atom_in_surface = torch.zeros((num_nodes,), dtype=torch.long)
-    atom_in_surface[: max(2, num_nodes // 2)] = 1
+    # EquiPocket.forward internally uses a per-surface-node mask to index
+    # surface_center_pos. For this toy script we therefore mark *all* nodes as
+    # surface-associated to keep the mask lengths aligned through batching.
+    atom_in_surface = torch.ones((num_nodes,), dtype=torch.long)
 
     # Surface anchor coordinates paired with each atom (same length as num_nodes).
     surface_center_pos = pos + 0.05 * torch.randn_like(pos)
@@ -58,8 +59,33 @@ def make_toy_sample(num_nodes: int = 8) -> Data:
     )
 
 
+def validate_toy_sample(data: Data) -> None:
+    """Fail fast with clear shape checks before the model forward pass."""
+    n = data.x.shape[0]
+    e = data.edge_index.shape[1]
+    assert data.x.shape == (n, 6), f"x must be [N,6], got {tuple(data.x.shape)}"
+    assert data.pos.shape == (n, 3), f"pos must be [N,3], got {tuple(data.pos.shape)}"
+    assert data.edge_index.shape[0] == 2, "edge_index must be [2,E]"
+    assert data.edge_attr.shape == (e, 3), (
+        f"edge_attr must be [E,3], got {tuple(data.edge_attr.shape)}"
+    )
+    assert data.atom_in_surface.shape == (n,), (
+        "atom_in_surface must be [N], "
+        f"got {tuple(data.atom_in_surface.shape)}"
+    )
+    assert data.surface_center_pos.shape == (n, 3), (
+        "surface_center_pos must be [N,3], "
+        f"got {tuple(data.surface_center_pos.shape)}"
+    )
+    assert int(data.atom_in_surface.sum().item()) == n, (
+        "Toy setup marks all nodes as surface nodes to avoid indexing mismatch"
+    )
+
+
 def main() -> None:
     dataset = [make_toy_sample(8), make_toy_sample(10), make_toy_sample(12)]
+    for sample in dataset:
+        validate_toy_sample(sample)
     loader = DataLoader(dataset, batch_size=2, shuffle=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
