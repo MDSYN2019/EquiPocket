@@ -4,28 +4,27 @@
 The Surface-Egnn for our work (EquiPocket: an E(3)-Equivariant Geometric Graph Neural
 Network for Ligand Binding Site Prediction)
 """
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import os
-from torch_scatter import scatter_softmax
-from torch_geometric.nn import global_add_pool, MLP, global_mean_pool, global_max_pool, radius_graph
 
 
 class MC_E_GCL(nn.Module):
-    def __init__(self,
-            input_nf,
-            output_nf,
-            hidden_nf,
-            n_channel,
-            edges_in_d=0,
-            act_fn=nn.SiLU(),
-            residual=True,
-            normalize=False,
-            coords_agg='mean',
-            tanh=False,
-            attention=False,
-            dropout=0.1):
+    def __init__(
+        self,
+        input_nf,
+        output_nf,
+        hidden_nf,
+        n_channel,
+        edges_in_d=0,
+        act_fn=nn.SiLU(),
+        residual=True,
+        normalize=False,
+        coords_agg="mean",
+        tanh=False,
+        attention=False,
+        dropout=0.1,
+    ):
         super(MC_E_GCL, self).__init__()
         input_edge = input_nf * 2
         self.residual = residual
@@ -41,12 +40,14 @@ class MC_E_GCL(nn.Module):
             nn.Linear(input_edge + 6 + edges_in_d, hidden_nf),
             act_fn,
             nn.Linear(hidden_nf, hidden_nf),
-            act_fn)
+            act_fn,
+        )
 
         self.node_mlp = nn.Sequential(
             nn.Linear(hidden_nf + input_nf, hidden_nf),
             act_fn,
-            nn.Linear(hidden_nf, output_nf))
+            nn.Linear(hidden_nf, output_nf),
+        )
 
         layer = nn.Linear(hidden_nf, n_channel, bias=False)
         torch.nn.init.xavier_uniform_(layer.weight, gain=0.001)
@@ -60,13 +61,10 @@ class MC_E_GCL(nn.Module):
         self.coord_mlp = nn.Sequential(*coord_mlp)
 
         if self.attention:
-            self.att_mlp = nn.Sequential(
-                nn.Linear(hidden_nf, 1),
-                nn.Sigmoid())
+            self.att_mlp = nn.Sequential(nn.Linear(hidden_nf, 1), nn.Sigmoid())
 
     def edge_model(self, source, target, radial, edge_attr):
-        radial = radial
-        if edge_attr is None:  
+        if edge_attr is None:
             out = torch.cat([source, target, radial], dim=1)
         else:
             out = torch.cat([source, target, radial, edge_attr], dim=1)
@@ -84,7 +82,7 @@ class MC_E_GCL(nn.Module):
             agg = torch.cat([x, agg, node_attr], dim=1)
         else:
             agg = torch.cat([x, agg], dim=1)
-        out = self.node_mlp(agg) 
+        out = self.node_mlp(agg)
         out = self.dropout(out)
         if self.residual:
             out = x + out
@@ -93,12 +91,12 @@ class MC_E_GCL(nn.Module):
     def coord_model(self, coord, edge_index, coord_diff, edge_feat):
         row, col = edge_index
         trans = coord_diff * self.coord_mlp(edge_feat).unsqueeze(-1)
-        if self.coords_agg == 'sum':
+        if self.coords_agg == "sum":
             agg = unsorted_segment_sum(trans, row, num_segments=coord.size(0))
-        elif self.coords_agg == 'mean':
+        elif self.coords_agg == "mean":
             agg = unsorted_segment_mean(trans, row, num_segments=coord.size(0))
         else:
-            raise Exception('Wrong coords_agg parameter' % self.coords_agg)
+            raise Exception("Wrong coords_agg parameter" % self.coords_agg)
         coord = coord + agg
         return coord
 
@@ -110,15 +108,18 @@ class MC_E_GCL(nn.Module):
         h, agg = self.node_model(h, edge_index, edge_feat, node_attr)
         return h, coord
 
+
 class SurfaceEGNN(nn.Module):
-    def __init__(self,
-            in_node_nf,
-            hidden_nf,
-            out_node_nf,
-            in_edge_nf=0,
-            act_fn=nn.SiLU(),
-            n_layers=4,
-            dropout=0.1,):
+    def __init__(
+        self,
+        in_node_nf,
+        hidden_nf,
+        out_node_nf,
+        in_edge_nf=0,
+        act_fn=nn.SiLU(),
+        n_layers=4,
+        dropout=0.1,
+    ):
         super().__init__()
         self.hidden_nf = hidden_nf
         self.n_layers = n_layers
@@ -131,33 +132,49 @@ class SurfaceEGNN(nn.Module):
         else:
             self.linear_out = nn.Linear(self.hidden_nf, out_node_nf)
 
-        print(in_edge_nf)
         for i in range(0, n_layers):
-            self.add_module(f'gcl_{i}', MC_E_GCL(
-                self.hidden_nf,
-                self.hidden_nf,
-                self.hidden_nf,
-                n_channel=2,
-                edges_in_d=in_edge_nf,
-                act_fn=act_fn, residual=True, dropout=dropout
-            ))
+            self.add_module(
+                f"gcl_{i}",
+                MC_E_GCL(
+                    self.hidden_nf,
+                    self.hidden_nf,
+                    self.hidden_nf,
+                    n_channel=2,
+                    edges_in_d=in_edge_nf,
+                    act_fn=act_fn,
+                    residual=True,
+                    dropout=dropout,
+                ),
+            )
 
-
-    def forward(self, h, x, ctx_edges, att_edges, ctx_edge_attr=None, att_edge_attr=None, return_attention=False):
+    def forward(
+        self,
+        h,
+        x,
+        ctx_edges,
+        att_edges,
+        ctx_edge_attr=None,
+        att_edge_attr=None,
+        return_attention=False,
+    ):
         h = self.linear_in(h)
         h = self.dropout(h)
 
-        ctx_states, ctx_coords, atts = [], [], []
+        # `att_edges`, `att_edge_attr`, and `return_attention` are preserved in the
+        # signature for compatibility with existing callers.
+        _ = (att_edges, att_edge_attr, return_attention)
+        ctx_states, ctx_coords = [], []
         ctx_states.append(h)
         ctx_coords.append(x)
         for i in range(0, self.n_layers):
-            h, x = self._modules[f'gcl_{i}'](h, ctx_edges, x, edge_attr=ctx_edge_attr)
+            h, x = self._modules[f"gcl_{i}"](h, ctx_edges, x, edge_attr=ctx_edge_attr)
             ctx_states.append(h)
             ctx_coords.append(x)
         if self.dense:
             h = torch.cat(ctx_states, dim=-1)
             x = torch.mean(torch.stack(ctx_coords), dim=0)
         return h, x
+
 
 def coord2radial(edge_index, coord):
     row, col = edge_index
@@ -186,12 +203,23 @@ def coord2radial(edge_index, coord):
     angel_surface_atom_0 = angel_surface_atom_0.unsqueeze(-1)
     angel_surface_atom_1 = angel_surface_atom_1.unsqueeze(-1)
     agnle_surface_0_surface_1 = agnle_surface_0_surface_1.unsqueeze(-1)
-    radial = torch.concat((distance_atom, distance_surface_atom_0, distance_surface_atom_1, angel_surface_atom_0, angel_surface_atom_1, agnle_surface_0_surface_1), dim=-1)
+    radial = torch.concat(
+        (
+            distance_atom,
+            distance_surface_atom_0,
+            distance_surface_atom_1,
+            angel_surface_atom_0,
+            angel_surface_atom_1,
+            agnle_surface_0_surface_1,
+        ),
+        dim=-1,
+    )
     return radial, coord_diff
+
 
 def unsorted_segment_sum(data, segment_ids, num_segments):
     expand_dims = tuple(data.shape[1:])
-    result_shape = (num_segments, ) + expand_dims
+    result_shape = (num_segments,) + expand_dims
     for _ in expand_dims:
         segment_ids = segment_ids.unsqueeze(-1)
     segment_ids = segment_ids.expand(-1, *expand_dims)
@@ -199,9 +227,10 @@ def unsorted_segment_sum(data, segment_ids, num_segments):
     result.scatter_add_(0, segment_ids, data)
     return result
 
+
 def unsorted_segment_mean(data, segment_ids, num_segments):
     expand_dims = tuple(data.shape[1:])
-    result_shape = (num_segments, ) + expand_dims
+    result_shape = (num_segments,) + expand_dims
     for _ in expand_dims:
         segment_ids = segment_ids.unsqueeze(-1)
     segment_ids = segment_ids.expand(-1, *expand_dims)
@@ -210,6 +239,7 @@ def unsorted_segment_mean(data, segment_ids, num_segments):
     result.scatter_add_(0, segment_ids, data)
     count.scatter_add_(0, segment_ids, torch.ones_like(data))
     return result / count.clamp(min=1)
+
 
 def get_edges(n_nodes):
     rows, cols = [], []
@@ -220,6 +250,7 @@ def get_edges(n_nodes):
                 cols.append(j)
     edges = [rows, cols]
     return edges
+
 
 def get_edges_batch(n_nodes, batch_size):
     edges = get_edges(n_nodes)
@@ -234,6 +265,7 @@ def get_edges_batch(n_nodes, batch_size):
             cols.append(edges[1] + n_nodes * i)
         edges = [torch.cat(rows), torch.cat(cols)]
     return edges, edge_attr
+
 
 if __name__ == "__main__":
     pass
