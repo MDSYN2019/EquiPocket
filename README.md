@@ -126,6 +126,32 @@ print(sample)
 
 ### DataLoader usage with EquiPocket (multi-protein batching)
 The model is designed to receive a **batched PyG `Data` object** from `torch_geometric.loader.DataLoader`.  
+A runnable script is provided at `exmaples/dataloader_equipocket_example.py`.
+Run it with:
+
+```bash
+python exmaples/dataloader_equipocket_example.py
+```
+
+The script builds synthetic `Data` samples with the fields EquiPocket expects, batches them with `DataLoader`, and runs a forward pass.
+Below is the key model setup used there:
+
+```python
+import torch
+from models.EquiPocket import EquiPocket
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = EquiPocket(
+    local_geometric_modeling=False,
+    global_structure_modeling="gat_egnn",
+    surface_egnn_depth=2,
+    dense_attention=False,
+    cutoff=6,
+    out_depth=2,
+    out_features=64,
+).to(device)
+model.eval()
+=======
 Below is a minimal pattern that matches how `EquiPocket` is consumed in code.
 
 ```python
