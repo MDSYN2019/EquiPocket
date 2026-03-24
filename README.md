@@ -151,6 +151,45 @@ model = EquiPocket(
     out_features=64,
 ).to(device)
 model.eval()
+=======
+Below is a minimal pattern that matches how `EquiPocket` is consumed in code.
+
+```python
+import pickle
+import torch
+from torch_geometric.loader import DataLoader
+
+from models.EquiPocket import EquiPocket
+
+# 1) Load a list of preprocessed PyG Data objects
+#    (for example, objects previously created by get_protein_feature and saved as .pkl files)
+paths = [
+    "processed_data/sample_1.pkl",
+    "processed_data/sample_2.pkl",
+]
+dataset = []
+for p in paths:
+    with open(p, "rb") as f:
+        dataset.append(pickle.load(f))
+
+# 2) Build DataLoader: PyG will concatenate graph/surface tensors and track graph membership
+loader = DataLoader(dataset, batch_size=2, shuffle=True)
+
+# 3) Build model (example values; adjust to your training config)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = EquiPocket(
+    in_node_nf=64,
+    hidden_nf=128,
+    out_node_nf=128,
+    in_edge_nf=32,
+).to(device)
+model.train()
+
+# 4) Iterate over batches and call EquiPocket forward
+for batch in loader:
+    batch = batch.to(device)
+    y_hat, angle = model(batch)  # per-node binding-site score + direction output
+    print(y_hat.shape, angle.shape)
 ```
 
 Practical notes:
