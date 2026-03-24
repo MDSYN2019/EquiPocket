@@ -104,13 +104,11 @@ class EquiPocket(nn.Module):
         atom_in_surface = batch_data.atom_in_surface
         pos = batch_data.pos
         surface_center_pos = batch_data.surface_center_pos
-        vert_batch = batch_data.vert_batch
-        vert_pos = batch_data.vert_pos
         node_embedding = []
         # local geometric embedding
         if self.local_geometric_modeling == True:
-            new_pos = batch_data.pos[batch_data.atom_in_surface==1]
             surface_descriptor = batch_data.surface_descriptor
+            vert_batch = batch_data.vert_batch
             local_geometric_embedding = self.trans_local_geometric_feature(surface_descriptor)
             geometric_embedding = torch.concat(
                 [global_mean_pool(local_geometric_embedding, vert_batch),
