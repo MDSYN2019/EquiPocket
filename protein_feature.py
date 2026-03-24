@@ -62,39 +62,52 @@ class MoleculeFeatures(object):
 
     # get edge_feature
     def get_edge_features(self, tmp_bond):
+        """
+        for a bond, get its start and end index, and allocate edge features related to whether it is a single, double or triple bond
+        """
         tmp_result = []
         start_index = tmp_bond.GetBeginAtomIdx()
         end_index = tmp_bond.GetEndAtomIdx()
         # SINGLE, AROMATIC, DOUBLE, Zero
         bond_type = str(tmp_bond.GetBondType())
         bond_type_list = 0
+        
         if bond_type == "SINGLE":
-            bond_type_list = 1
+            bond_type_list = 1 # single bond 
         if bond_type == "DOUBLE":
-            bond_type_list = 2
+            bond_type_list = 2 # double bond 
         if bond_type == "AROMATIC":
-            bond_type_list = 3
+            bond_type_list = 3 # triple bond
+
+            
         bond_ring = 1 if tmp_bond.IsInRing() else 0
-        x_0, y_0, z_0 = self.molecule.GetConformer().GetAtomPosition(start_index)
+        x_0, y_0, z_0 = self.molecule.GetConformer().GetAtomPosition(start_index) # not quite sure what getconformer here is doing 
         x_1, y_1, z_1 = self.molecule.GetConformer().GetAtomPosition(end_index)
-        bond_length = self.get_bond_length(x_0, y_0, z_1, x_1, y_1, z_1)
+        
+        bond_length = self.get_bond_length(x_0, y_0, z_1, x_1, y_1, z_1) 
         tmp_result = []
         tmp_result.append(bond_type_list)
         tmp_result += [bond_ring, bond_length]
+        
         return start_index, end_index, tmp_result
 
     # regard molecule as graph
     def get_graph_features(self, init_index=0):
+        """
+        """
         self.all_atoms = {}
         atoms = self.molecule.GetAtoms()
+
         all_atom_index = []
         all_atom_features = []
         all_atom_pos = []
+
         for tmp_atom in atoms:
             atom_index, atom_feature, pos = self.get_atom_features(tmp_atom)
             all_atom_index.append(init_index + atom_index)
             all_atom_features.append(atom_feature)
             all_atom_pos.append(pos)
+
         bonds = self.molecule.GetBonds()
         all_edge_index = [[], []]
         all_edge_attr = []
@@ -106,6 +119,8 @@ class MoleculeFeatures(object):
             all_edge_index[1].append(init_index + start_index)
             all_edge_index[0].append(init_index + end_index)
             all_edge_attr.append(edge_feature)
+
+            
         return all_atom_index, all_atom_features, all_atom_pos, all_edge_index, all_edge_attr
 
     # get_surface_feature from msms
@@ -232,7 +247,7 @@ def get_protein_feature(protein_file_name, msms_path=""):
 if __name__ == "__main__":
     # pls install msms at first
     msms_path = ""
-    protein_file_name = "protein.pdb"
+    protein_file_name = "1UYD.pdb"
     tmp_graph = get_protein_feature(protein_file_name, msms_path=msms_path)
     # Data(x=[1572, 6], edge_index=[2, 3224], edge_attr=[3224, 3], pos=[1572, 3], atom_in_surface=[1572], vert_surface=[10385, 9], vert_pos=[10384, 3], vert_atom=[10384], vert_num=[10384], vert_atom_diff=[10384, 3], vert_batch=[10384], surface_center_pos=[988, 3], surface_descriptor=[10384, 7])
 
