@@ -75,6 +75,65 @@ Reference EGNN implementation (adapted from the original EGNN repository noted b
 - `processed_data/5ei3_protein.pdb`: example cleaned protein.
 - `processed_data/5ei3_protein.pkl`: example processed graph output.
 
+
+## End-to-end pipeline (step by step)
+If you are wondering what happens **after** `protein_feature` turns a cleaned protein into a PyG object, this is the full flow used in this repository.
+
+1. **Prepare cleaned protein/ligand files**
+   Use `data/0_clean_data.py` to split raw complexes into standardized files (`protein.pdb`, `ligand.pdb`) under `1_clean_data/<dataset>/<sample>/`.
+   - `split_protein_ligand(...)` extracts polymer as receptor and ligand atoms (optionally by residue names for COACH420/HOLO4K).
+   - `clean_scPDB`, `clean_coach420`, `clean_holo4k`, and `clean_PDBbind` are dataset-specific wrappers.
+
+2. **Build one protein graph with `get_protein_feature(...)`**
+   `protein_feature.py` converts one cleaned protein structure into a `torch_geometric.data.Data` object:
+   - Parse structure by RDKit (`pdb` / `mol2` / `sdf`).
+   - Build atom-level graph tensors (`x`, `pos`, `edge_index`, `edge_attr`).
+   - Run MSMS to generate surface vertices (`vert_surface`).
+   - Map each surface vertex to nearest atom (`vert_atom`) and mark whether atom is on surface (`atom_in_surface`).
+   - Compute 7D surface descriptor (`surface_descriptor`) from local KNN geometry + global shape statistics.
+   - Package all tensors into a single PyG `Data` sample.
+
+3. **Batch samples with PyG DataLoader**
+   For training/inference on many proteins, store each `Data` object (e.g., as `.pkl`) and load them with a PyTorch Geometric `DataLoader`.
+   In batching, key tensors like `x`, `pos`, `edge_index`, and surface tensors are concatenated with batch indices handled by PyG.
+
+4. **Run EquiPocket forward pass**
+   `models/EquiPocket.py` consumes the batched `Data` and processes it in three branches:
+   - **Global branch**: `Baseline_Models` (`models/baseline_models.py`) embeds atom/bond chemistry and applies selected GNN backbone(s) (default includes GAT + EGNN settings).
+   - **Local geometric branch**: MLP stack on `surface_descriptor` to encode local surface geometry.
+   - **Surface equivariant branch**: `SurfaceEGNN` (`models/surface_egnn.py`) updates atom/surface-anchor representations with E(3)-equivariant message passing.
+
+5. **Fuse features and predict binding signal**
+   EquiPocket concatenates/fuses branch outputs and predicts:
+   - `y_hat`: per-surface-associated atom score/logit for binding site likelihood.
+   - `angle`: relative direction vector from updated coordinates.
+
+6. **(Training usage) build labels and optimize**
+   This repository includes model/data-feature code; your training loop should additionally:
+   - build labels from known ligand-contact definitions,
+   - compute loss from `y_hat` (and optional geometric terms),
+   - backpropagate and update model parameters.
+
+### Minimal example (single protein -> PyG sample)
+```python
+from protein_feature import get_protein_feature
+
+protein_file = "processed_data/5ei3_protein.pdb"
+msms_path = "/path/to/msms/bin"  # folder containing pdb_to_xyzr and msms
+sample = get_protein_feature(protein_file, msms_path=msms_path)
+print(sample)
+```
+
+### Tensor meaning quick reference
+- `x`: atom feature matrix `[num_atoms, 6]`
+- `pos`: centered atom coordinates `[num_atoms, 3]`
+- `edge_index`: directed bond edges `[2, num_edges]`
+- `edge_attr`: bond features `[num_edges, 3]`
+- `atom_in_surface`: whether each atom has assigned surface vertices `[num_atoms]`
+- `vert_pos`: unique centered surface points `[num_vertices, 3]`
+- `vert_atom`: atom index mapped from each surface vertex `[num_vertices]`
+- `surface_descriptor`: 7D geometric descriptor per surface vertex `[num_vertices, 7]`
+
 ## Dependency
  - python: 3.7
  - cuda: 11.6
