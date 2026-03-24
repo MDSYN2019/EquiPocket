@@ -151,6 +151,12 @@ class MoleculeFeatures(object):
         return vert_surface
 
 def get_surface_feature(vert_surface, protein_pos, mean_protein_pos):
+    if vert_surface.numel() == 0:
+        empty_long = torch.empty(0, dtype=torch.long)
+        empty_float = torch.empty(0, 3, dtype=protein_pos.dtype)
+        atom_in_surface = torch.zeros(protein_pos.shape[0], dtype=protein_pos.dtype)
+        vert_num = torch.tensor(0, dtype=torch.long)
+        return empty_float, empty_long, vert_num, atom_in_surface, empty_float, empty_long
     pos = protein_pos
     vert_pos = vert_surface[:, [0, 1, 2]]
     vert_pos = torch.unique(vert_pos, dim=0)
@@ -171,6 +177,10 @@ def get_surface_feature(vert_surface, protein_pos, mean_protein_pos):
     return vert_pos, vert_atom, vert_num, atom_in_surface, vert_atom_diff, vert_batch
 
 def get_surface_descriptor(pos, vert_pos, vert_atom, atom_in_surface, vert_batch):
+    if vert_pos.shape[0] == 0:
+        surface_descriptor = torch.empty(0, 7, dtype=pos.dtype)
+        surface_center_pos = torch.empty(0, 3, dtype=pos.dtype)
+        return surface_descriptor, surface_center_pos
     tmp_pos = pos[atom_in_surface==1]
     # KNN for two nearest surface point
     assign_index = knn(vert_pos, vert_pos, 3)
@@ -213,6 +223,11 @@ def get_surface_descriptor(pos, vert_pos, vert_atom, atom_in_surface, vert_batch
 
 def get_protein_feature(protein_file_name, msms_path=""):
     protein = MoleculeFeatures(protein_file_name)
+    if protein.molecule is None:
+        raise ValueError(
+            f"Could not parse protein structure from '{protein_file_name}'. "
+            "Please check that the PDB/MOL2/SDF file is valid."
+        )
     atoms = protein.molecule.GetAtoms()
     # get global structure features
     all_atom_index, all_atom_features, all_atom_pos, all_edge_index, all_edge_attr = protein.get_graph_features()
@@ -221,7 +236,10 @@ def get_protein_feature(protein_file_name, msms_path=""):
     all_atom_pos = all_atom_pos - mean_protein_pos
     # get_surface_features
     vert_surface = protein.get_surface(msms_path=msms_path)
-    vert_surface = tensor(vert_surface).float()
+    if len(vert_surface) == 0:
+        vert_surface = torch.empty(0, 9).float()
+    else:
+        vert_surface = tensor(vert_surface).float()
     vert_pos, vert_atom, vert_num, atom_in_surface, vert_atom_diff, vert_batch = get_surface_feature(vert_surface, all_atom_pos, mean_protein_pos)
     # get_surface_descriptor
     surface_descriptor, surface_center_pos = get_surface_descriptor(all_atom_pos, vert_pos, vert_atom, atom_in_surface, vert_batch)
@@ -237,7 +255,7 @@ def get_protein_feature(protein_file_name, msms_path=""):
             vert_surface=vert_surface,
             vert_pos=vert_pos,
             vert_atom=vert_atom,
-            vert_num=vert_atom,
+            vert_num=vert_num,
             vert_atom_diff=vert_atom_diff,
             vert_batch=vert_batch,
             surface_center_pos=surface_center_pos,
@@ -250,4 +268,3 @@ if __name__ == "__main__":
     protein_file_name = "1UYD.pdb"
     tmp_graph = get_protein_feature(protein_file_name, msms_path=msms_path)
     # Data(x=[1572, 6], edge_index=[2, 3224], edge_attr=[3224, 3], pos=[1572, 3], atom_in_surface=[1572], vert_surface=[10385, 9], vert_pos=[10384, 3], vert_atom=[10384], vert_num=[10384], vert_atom_diff=[10384, 3], vert_batch=[10384], surface_center_pos=[988, 3], surface_descriptor=[10384, 7])
-
