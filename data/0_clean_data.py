@@ -7,40 +7,39 @@ def split_protein_ligand(complex_pdb,
                          protein_pdb=None,
                          ligand_pdb=None,
                          ligand_res_name=None):
-    import pymol
-    from pymol import cmd as pymol_cmd
+    import MDAnalysis as mda
 
-    # load complex in pymol session
-    pymol_cmd.load(complex_pdb, 'complex')
+    universe = mda.Universe(complex_pdb)
+    base_selection = "all"
+    # Match previous behavior: solvent/hydrogen cleanup happened only when exporting protein.
     if protein_pdb:
-        pymol_cmd.remove("solvent")
-        pymol_cmd.remove('hydrogens')
+        base_selection += " and not (resname HOH WAT SOL TIP3 TIP3P) and not name H*"
 
+    filtered_atoms = universe.select_atoms(base_selection)
 
     if ligand_pdb:
-        if ligand_res_name != None:
+        ligand_base_selection = "not (protein or nucleic)"
+        if ligand_res_name is not None:
             count = 0
             for tmp_ligand_resname in ligand_res_name:
-                try:
-                    pymol_cmd.extract('ligand', f'resn {tmp_ligand_resname}')
-                except:
+                ligand_atoms = filtered_atoms.select_atoms(
+                    f"{ligand_base_selection} and resname {tmp_ligand_resname}"
+                )
+                if ligand_atoms.n_atoms == 0:
                     continue
                 tmp_ligand_pdb = ligand_pdb.replace(".pdb", "") + str(count) + ".pdb"
-                pymol_cmd.save(tmp_ligand_pdb, 'ligand')
-                pymol_cmd.delete('ligand')
+                ligand_atoms.write(tmp_ligand_pdb)
                 count += 1
         else:
-            pymol_cmd.extract('ligand', 'not polymer')
-            pymol_cmd.save(ligand_pdb, 'ligand')
+            ligand_atoms = filtered_atoms.select_atoms(ligand_base_selection)
+            if ligand_atoms.n_atoms > 0:
+                ligand_atoms.write(ligand_pdb)
 
     # save protein
     if protein_pdb:
-        # extract protein
-        pymol_cmd.extract('receptor', 'polymer')
-        pymol_cmd.save(protein_pdb, 'receptor')
-
-    # delete session
-    pymol_cmd.delete('all')
+        receptor_atoms = filtered_atoms.select_atoms("protein or nucleic")
+        if receptor_atoms.n_atoms > 0:
+            receptor_atoms.write(protein_pdb)
 
 
 def clean_pdb_0(input_file, output_file):
