@@ -17,7 +17,7 @@ Builds the graph representation used as model input from a protein structure fil
 
 ### `data/0_clean_data.py`
 Dataset preprocessing script that splits complexes into protein/ligand files and standardizes dataset layouts.
-- Uses PyMOL to split a complex into polymer (protein) and ligand atoms.
+- Uses MDAnalysis to split a complex into polymer (protein/nucleic) and ligand atoms.
 - Supports ligand extraction by residue name lists (used by COACH420/HOLO4K mapping files).
 - Includes helpers to remove non-standard residues from PDB files.
 - Provides dataset-specific cleaning pipelines:

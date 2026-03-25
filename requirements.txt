@@ -8,6 +8,6 @@ torch_scatter==2.0.9
 tqdm==4.64.1
 Bio==1.5.3
 numpy==1.21.5
-pymol==0.1.0
+MDAnalysis==2.5.0
 rdkit==2022.9.4
 
