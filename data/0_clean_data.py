@@ -2,15 +2,24 @@
 import os
 import sys
 import json
+import MDAnalysis as mda
+
+import Bio
+from Bio.PDB import PDBParser, PDBIO, Select
+    
+class NonHetSelect(Select):
+    def accept_residue(self, residue):
+        return 1 if Bio.PDB.Polypeptide.is_aa(residue,standard=True) else 0
 
 def split_protein_ligand(complex_pdb,
                          protein_pdb=None,
                          ligand_pdb=None,
                          ligand_res_name=None):
-    import MDAnalysis as mda
 
     universe = mda.Universe(complex_pdb)
     base_selection = "all"
+
+    
     # Match previous behavior: solvent/hydrogen cleanup happened only when exporting protein.
     if protein_pdb:
         base_selection += " and not (resname HOH WAT SOL TIP3 TIP3P) and not name H*"
@@ -18,13 +27,16 @@ def split_protein_ligand(complex_pdb,
     filtered_atoms = universe.select_atoms(base_selection)
 
     if ligand_pdb:
-        ligand_base_selection = "not (protein or nucleic)"
+        ligand_base_selection = "not (protein or nucleic)" # in my situation it would be MRV
+        
         if ligand_res_name is not None:
             count = 0
             for tmp_ligand_resname in ligand_res_name:
+
                 ligand_atoms = filtered_atoms.select_atoms(
                     f"{ligand_base_selection} and resname {tmp_ligand_resname}"
                 )
+
                 if ligand_atoms.n_atoms == 0:
                     continue
                 tmp_ligand_pdb = ligand_pdb.replace(".pdb", "") + str(count) + ".pdb"
@@ -43,11 +55,6 @@ def split_protein_ligand(complex_pdb,
 
 
 def clean_pdb_0(input_file, output_file):
-    import Bio
-    from Bio.PDB import PDBParser, PDBIO, Select
-    class NonHetSelect(Select):
-        def accept_residue(self, residue):
-            return 1 if Bio.PDB.Polypeptide.is_aa(residue,standard=True) else 0
     pdb = PDBParser().get_structure("protein", input_file)
     io = PDBIO()
     io.set_structure(pdb)

@@ -9,6 +9,7 @@ from torch import nn
 from torch_geometric.nn import MLP, global_mean_pool, global_max_pool, radius_graph
 
 from .baseline_models import Baseline_Models
+from .surface_egnn import SurfaceEGNN
 
 
 def get_cutoff_ratio(pos, cutoff, surface_egnn_depth):
@@ -36,20 +37,42 @@ class EquiPocket(nn.Module):
         out_depth=2,
         out_features=128,
     ):
+        """
+        The dimension of the input data is as follows:
+
+        
+        Data(x=[5690, 6],
+        edge_index=[2, 11594],
+        edge_attr=[11594, 3],
+        pos=[5690, 3],
+        atom_in_surface=[5690],
+        vert_surface=[0, 9],
+        vert_pos=[0, 3],
+        vert_atom=[0],
+        vert_num=0,
+        vert_atom_diff=[0, 3],
+        vert_batch=[0],
+        surface_center_pos=[0, 3],
+        surface_descriptor=[0, 7])        
+        """
+        
         super(EquiPocket, self).__init__()
         self.dense_attention = dense_attention
-        self.local_geometric_modeling = local_geometric_modeling
-        self.global_structure_modeling = global_structure_modeling
-        self.surface_egnn_depth = surface_egnn_depth
+        self.local_geometric_modeling = local_geometric_modeling # local geometric modeling
+        self.global_structure_modeling = global_structure_modeling # global structure modeling 
+        self.surface_egnn_depth = surface_egnn_depth # surface egnn depeth 
         self.dense_attention = dense_attention
         self.cutoff = cutoff
         self.out_depth = out_depth
         self.out_features = out_features
+        
         atom_channels = 16
         bond_channels = 16
         trans_input_features = 0
+
         # local_geometric_modeling
         if self.local_geometric_modeling:
+        # create the MLP for the local geometric feature and the surface feature 
             self.trans_local_geometric_feature = MLP(
                 in_channels=7,
                 hidden_channels=out_features // 2,
@@ -65,7 +88,9 @@ class EquiPocket(nn.Module):
                 num_layers=out_depth,
             )
             trans_input_features += 2 * out_features
-        # global_structure_modeling
+
+            
+        # global_structure_modeling - embeds the global structure of the protein through the GNNs
         if self.global_structure_modeling == "gat_egnn":
             self.global_structure_modeling_model = Baseline_Models(
                 atom_channels=atom_channels,
@@ -76,7 +101,8 @@ class EquiPocket(nn.Module):
                 egnn_depth=3,
             )
             trans_input_features += out_features
-        # concat feautres
+            
+        # concat features 
         self.trans_geo_feature = MLP(
             in_channels=trans_input_features,
             hidden_channels=out_features,
@@ -84,17 +110,18 @@ class EquiPocket(nn.Module):
             dropout=0.1,
             num_layers=out_depth,
         )
+
+        
         # surface_egnn_depth
         if self.surface_egnn_depth > 0:
-            from .surface_egnn import SurfaceEGNN
-
+        
             self.surface_egnn = SurfaceEGNN(
                 in_node_nf=out_features,
                 hidden_nf=out_features,
                 out_node_nf=out_features,
                 n_layers=surface_egnn_depth,
             )
-            if self.dense_attention:
+            if self.dense_attention: # calculate the attention for each node after the surface EGNN, which is based on the cutoff ratio of each node 
                 self.cal_attention = nn.Sequential()
                 attention_in_features = surface_egnn_depth + 2
                 mlp = MLP(
@@ -106,6 +133,8 @@ class EquiPocket(nn.Module):
                 )
                 self.cal_attention.add_module("cal_attention", mlp)
                 self.cal_attention.add_module("sigmoid", nn.Sigmoid())
+
+                
         # predict
         last_out_feature = out_features * (surface_egnn_depth + 1)
         self.all_out = MLP(
@@ -123,16 +152,21 @@ class EquiPocket(nn.Module):
         surface_center_pos = batch_data.surface_center_pos
         node_embedding = []
         # local geometric embedding
-        if self.local_geometric_modeling:
-            surface_descriptor = batch_data.surface_descriptor
+        
+        if self.local_geometric_modeling: # modelling through the local_geometric modelling
+            
+            surface_descriptor = batch_data.surface_descriptor # the surface descriptor is the local geometric feature for each node, which is calculated by the MSMS software and has 7 dimensions 
             vert_batch = batch_data.vert_batch
+            
             local_geometric_embedding = self.trans_local_geometric_feature(
-                surface_descriptor
-            )
+                 surface_descriptor
+             ) # outputs the local geometric embedding for each node, which is then pooled to get the
+
+        
             geometric_embedding = torch.concat(
                 [
-                    global_mean_pool(local_geometric_embedding, vert_batch),
-                    global_max_pool(local_geometric_embedding, vert_batch),
+                    global_mean_pool(local_geometric_embedding, vert_batch), # for each node, we pool the local geometric embedding of its neighbours nodes to get the geometr
+                    global_max_pool(local_geometric_embedding, vert_batch), # max pooling to get pooled feautres
                 ],
                 dim=-1,
             )
@@ -149,6 +183,8 @@ class EquiPocket(nn.Module):
 
         # global_structure_modeling
         if self.global_structure_modeling:
+
+            
             global_structure_node_embedding_all = self.global_structure_modeling_model(
                 batch_data
             )
@@ -160,6 +196,8 @@ class EquiPocket(nn.Module):
 
         # trans 3 * out_features -> out_features
         node_embedding = self.trans_geo_feature(node_embedding)
+
+        
         # Surface passing
         if self.surface_egnn_depth > 0:
             new_batch = batch_data.batch[atom_in_surface == 1]

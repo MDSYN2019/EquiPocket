@@ -14,18 +14,25 @@ class embed_atom_chem(torch.nn.Module):
         ring_channels=16,
     ):
         super(embed_atom_chem, self).__init__()
-        self.embed_atom_channels = Embedding(100, atom_channels)
-        self.embed_charge_channels = Embedding(10, formal_charge_channels)
-        self.embed_chiral_tag = Embedding(10, chiral_tag_channels)
-        self.embed_aromatic_channels = Embedding(10, aromatic_channels)
-        self.embed_ring_channels = Embedding(10, ring_channels)
+        
+        self.embed_atom_channels = Embedding(100, atom_channels) # There are 100 possible items, and we represent that with 16 numbers  - not sure why we hve 100 tatom types here
+        self.embed_charge_channels = Embedding(10, formal_charge_channels) # there are 10 distinct charges, but we map it to 16 numbers
+        self.embed_chiral_tag = Embedding(10, chiral_tag_channels) # ditto here 
+        self.embed_aromatic_channels = Embedding(10, aromatic_channels) # ditto here 
+        self.embed_ring_channels = Embedding(10, ring_channels) # ditto here
 
     def forward(self, x):
-        embed_atom_channels_data = self.embed_atom_channels(x[:, 0].long())
-        embed_charge_channels_data = self.embed_charge_channels(x[:, 1].long())
-        embed_chiral_tag_data = self.embed_chiral_tag(x[:, 2].long())
-        embed_aromatic_channels_data = self.embed_aromatic_channels(x[:, 3].long())
-        embed_ring_channels_data = self.embed_ring_channels(x[:, 4].long())
+        """
+        Initalize the above embedding operation
+        """
+        embed_atom_channels_data = self.embed_atom_channels(x[:, 0].long()) # embed the atom type 
+        embed_charge_channels_data = self.embed_charge_channels(x[:, 1].long()) # embed the charge type 
+        embed_chiral_tag_data = self.embed_chiral_tag(x[:, 2].long()) # embed the chiral tag 
+        embed_aromatic_channels_data = self.embed_aromatic_channels(x[:, 3].long()) # embed the aromatic type 
+        embed_ring_channels_data = self.embed_ring_channels(x[:, 4].long()) # embed the ring type
+
+        ## Embed the features into a multi-level embedding concatenation of the atomic characters
+    
         all_atom_embed = torch.cat(
             [
                 embed_atom_channels_data,
@@ -69,6 +76,9 @@ def get_interaction(x, edge_index, edge_attr=None):
 
 
 class Baseline_Models(nn.Module):
+    """
+    This is used with the 
+    """
     def __init__(
         self,
         atom_channels,
@@ -84,30 +94,38 @@ class Baseline_Models(nn.Module):
         cutoff=5,
     ):
         super(Baseline_Models, self).__init__()
-        self.gat_depth = gat_depth
+        self.gat_depth = gat_depth # This is what is used  #
+
+
         self.gcn_depth = gcn_depth
         self.gin_depth = gin_depth
         self.gcn2_depth = gcn2_depth
         self.schnet_depth = schnet_depth
         self.dimenet_depth = dimenet_depth
         self.egnn_depth = egnn_depth
-        # embed atom
+
+        # ------
+        # embed atom - get the embedded atoms 
         self.get_atom_embed = embed_atom_chem(
             atom_channels=atom_channels,
             formal_charge_channels=atom_channels,
             chiral_tag_channels=atom_channels,
             aromatic_channels=atom_channels,
             ring_channels=atom_channels,
-        )
-        #  embed edge
+        ) 
+        #  embed edge - get the embeddeed edges 
         self.get_edge_embed = embed_bond_chem(
             bond_type_channels=bond_channels, bond_ring_channels=bond_channels
         )
+        # -----
 
         input_atom_length = 5 * atom_channels + 1
         input_edge_length = 2 * bond_channels + 1
+
+        # This is what is used for the chemical graph process
         if self.gat_depth > 0:
-            self.gat = torch.nn.ModuleList()
+            self.gat = torch.nn.ModuleList() # Create a list - ModuleList is a container for layers - it does not apply them by itself
+            
             self.gat.append(
                 GATConv(
                     in_channels=input_atom_length,
@@ -118,6 +136,7 @@ class Baseline_Models(nn.Module):
                     edge_dim=input_edge_length,
                 )
             )
+
             for _ in range(gat_depth - 1):
                 self.gat.append(
                     GATConv(
@@ -129,7 +148,7 @@ class Baseline_Models(nn.Module):
                         edge_dim=None,
                     )
                 )
-        # gat
+        # gat -- or it could be this..
         if self.gat_depth == 0:
             self.trans = nn.Linear(
                 in_features=input_atom_length, out_features=out_features
@@ -199,15 +218,25 @@ class Baseline_Models(nn.Module):
 
     #
     def forward(self, batch_data):
+        """
+        Need a breakdown here of what is happening
+        """
         new_x = self.get_atom_embed(batch_data.x)
         new_edge_attr = self.get_edge_embed(batch_data.edge_attr)
-        # gat
+
+        # -- I think this is what is used for the chemical graph modelling part
+
+        
+        # gat - in the case where we have nore than level 0 depth for the gat -         
         if self.gat_depth > 0:
-            node_embedding = self.gat[0](new_x, batch_data.edge_index, new_edge_attr)
+            node_embedding = self.gat[0](new_x, batch_data.edge_index, new_edge_attr) # new node embedding for the 
             for tmp_model in self.gat[1:]:
-                node_embedding = tmp_model(node_embedding, batch_data.edge_index)
+                node_embedding = tmp_model(node_embedding, batch_data.edge_index) # for further layers, develop the node embeddings by a further radius from the node in question
+
         if self.gat_depth == 0:
             node_embedding = self.trans(new_x)
+        # -- 
+        
         # gcn
         if self.gcn_depth > 0:
             for tmp_model in self.gcn:
@@ -241,12 +270,18 @@ class Baseline_Models(nn.Module):
         # egnn
         if self.egnn_depth > 0:
             all_node_embedding = []
+
             for graph_id in batch_data.batch.unique():
                 tmp_node_embedding = node_embedding[batch_data.batch == graph_id]
+
                 tmp_pos = batch_data.pos[batch_data.batch == graph_id]
+
                 edge_index = radius_graph(tmp_pos, r=5, max_num_neighbors=8)
+
                 edge_attr = torch.ones_like(edge_index[0])
+
                 edge_attr = edge_attr.unsqueeze(dim=1)
+
                 tmp_node_embedding, tmp_pos = self.egnn(
                     h=tmp_node_embedding,
                     x=tmp_pos,
@@ -254,5 +289,7 @@ class Baseline_Models(nn.Module):
                     edge_attr=edge_attr,
                 )
                 all_node_embedding.append(tmp_node_embedding)
+
+            # I think this is where we get the final node embedding
             node_embedding = torch.concat(all_node_embedding, dim=0)
         return node_embedding

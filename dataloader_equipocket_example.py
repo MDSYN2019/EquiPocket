@@ -19,10 +19,10 @@ def make_toy_sample(num_nodes: int = 8) -> Data:
     x[:, 0] = 6  # carbon-like atomic number token
     x[:, 1] = 0  # charge token
     x[:, 2] = 0  # chirality token
-    x[:, 3] = torch.randint(0, 2, (num_nodes,), dtype=torch.long).float()
-    x[:, 4] = torch.randint(0, 2, (num_nodes,), dtype=torch.long).float()
-    x[:, 5] = torch.randint(1, 4, (num_nodes,), dtype=torch.long).float()
-
+    x[:, 3] = torch.randint(0, 2, (num_nodes,), dtype=torch.long).float() # I think would be the aromatic flag?
+    x[:, 4] = torch.randint(0, 2, (num_nodes,), dtype=torch.long).float() # ring degree 
+    x[:, 5] = torch.randint(1, 4, (num_nodes,), dtype=torch.long).float() # degree or scalar 
+    
     # Simple 3D coordinates with nearby points so radius graphs are not empty.
     pos = torch.randn((num_nodes, 3), dtype=torch.float) * 0.3
 

@@ -8,12 +8,17 @@ import rdkit
 import torch
 import random
 import pickle
+import subprocess
+
+
 import torch.nn.functional as F
 from torch import tensor
 from rdkit import Chem
 from rdkit.Chem import rdFreeSASA
 from torch_geometric.data import Data
 from torch_geometric.nn import global_add_pool, knn, global_mean_pool, global_max_pool, radius_graph
+
+
 """
 This file is used to get the geometric and multi-level structure info in a protein for our EquiPocket.
 Pls intall msms(https://ccsb.scripps.edu/msms/) first.
@@ -24,43 +29,61 @@ class MoleculeFeatures(object):
     def __init__(self, file_name):
         self.file_name = file_name
         if file_name[-3:] == "pdb":
-            self.molecule = Chem.MolFromPDBFile(file_name)
+            self.molecule = Chem.MolFromPDBFile(file_name) # parsing the pdb file 
         if file_name[-4:] == "mol2":
-            self.molecule = Chem.MolFromMol2File(file_name)
+            self.molecule = Chem.MolFromMol2File(file_name) # parsing the mol2 file 
         if file_name[-3:] == "sdf":
-            self.molecule = Chem.SDMolSupplier(file_name)[0]
+            self.molecule = Chem.SDMolSupplier(file_name)[0] # parsing the sdf file 
 
-    # get_bond_length
     def get_bond_length(self, x_0, y_0, z_0, x_1, y_1, z_1):
+        """
+        get absolute bond length between two atoms 
+        """
         bond_length = ((x_0 - x_1)**2 + (y_0 - y_1)**2 + (z_0 - z_1)**2) ** 0.5
         return bond_length
 
     # get atom features
-    def get_atom_features(self, tmp_atom, cal_sasa=False):
+    def get_atom_features(self, tmp_atom, cal_sasa=False): 
+        """
+        For an atom, get its index and allocate atom features related to its atomic number, formal charge,
+        chirality, aromaticity, whether it is in a ring and its degree.
+
+        Also get the 3D coordinates of the atom, which will be used to calculate the bond length and surface descriptor.
+
+        This is information per atom
+        """
+
         tmp_data = []
-        atom_index = tmp_atom.GetIdx()
-        tmp_data.append(tmp_atom.GetAtomicNum())
-        tmp_data.append(tmp_atom.GetFormalCharge() + 2)
+        atom_index = tmp_atom.GetIdx() # get the index of the atom in the molecule 
+        tmp_data.append(tmp_atom.GetAtomicNum()) # get the atomic number of the atom 
+        tmp_data.append(tmp_atom.GetFormalCharge() + 2) # get the formal charge of the atom, and add 2 to make it non-negative 
+
+        
         chiral_tag_list = 0
-        chiral_tag = str(tmp_atom.GetChiralTag())
-        if chiral_tag == "CHI_UNSPECIFIED":
+        chiral_tag = str(tmp_atom.GetChiralTag()) # get the chiral tag of the atom 
+        if chiral_tag == "CHI_UNSPECIFIED": # chiral tag unspecified 
             pass
-        if chiral_tag == "CHI_TETRAHEDRAL_CW":
+        if chiral_tag == "CHI_TETRAHEDRAL_CW": # chiral tag tetrahedral clockwise 
             chiral_tag_list = 1
-        if chiral_tag == "CHI_TETRAHEDRAL_CCW":
+        if chiral_tag == "CHI_TETRAHEDRAL_CCW": # chiral tag tetrahedral counterclockwise 
             chiral_tag_list = 2
         if chiral_tag == "CHI_OTHER":
             chiral_tag_list = 3
-        tmp_data.append(chiral_tag_list)
+            
+        tmp_data.append(chiral_tag_list)  # add the chiral tag feature to the atom feauters 
         tmp_data.append(1 if tmp_atom.GetIsAromatic()==True else 0)
-        ## 1.10 判断原子是否在环上
+
+        # Determine whether the atom is in a ring
+        # Check if an atom belongs to a ring
+        # Determine whether an atom is part of a ring structure
+
         tmp_data.append(1 if tmp_atom.IsInRing() else 0)
         tmp_data.append(tmp_atom.GetDegree())
+
         x, y, z = self.molecule.GetConformer().GetAtomPosition(atom_index)
         pos = (x, y, z)
         return atom_index, tmp_data, pos
 
-    # get edge_feature
     def get_edge_features(self, tmp_bond):
         """
         for a bond, get its start and end index, and allocate edge features related to whether it is a single, double or triple bond
@@ -91,9 +114,9 @@ class MoleculeFeatures(object):
         
         return start_index, end_index, tmp_result
 
-    # regard molecule as graph
     def get_graph_features(self, init_index=0):
         """
+        For a molecule, get the graph features of its atoms and bonds        
         """
         self.all_atoms = {}
         atoms = self.molecule.GetAtoms()
@@ -102,7 +125,7 @@ class MoleculeFeatures(object):
         all_atom_features = []
         all_atom_pos = []
 
-        for tmp_atom in atoms:
+        for tmp_atom in atoms: # for each atom in the molecule, get its index, features and 3D coordinates
             atom_index, atom_feature, pos = self.get_atom_features(tmp_atom)
             all_atom_index.append(init_index + atom_index)
             all_atom_features.append(atom_feature)
@@ -125,6 +148,56 @@ class MoleculeFeatures(object):
 
     # get_surface_feature from msms
     def get_surface(self, msms_path=""):
+        vert_surface = []
+        pdb_file = os.path.abspath(self.file_name)
+
+        pdb_to_xyzr = os.path.join(msms_path, "pdb_to_xyzr")
+        msms_bin = os.path.join(msms_path, "msms.x86_64Linux2.2.6.1")
+
+        xyzr_path = os.path.join(msms_path, "tmp.xyzr")
+        out_prefix = os.path.join(msms_path, "result")
+
+        # 1. make xyzr
+        with open(xyzr_path, "w") as fout:
+            p = subprocess.run(
+                [pdb_to_xyzr, pdb_file],
+                stdout=fout,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if p.returncode != 0:
+                raise RuntimeError(f"pdb_to_xyzr failed:\n{p.stderr}")
+
+        # 2. run msms
+        p = subprocess.run(
+            [msms_bin, "-probe_radius", "1.5", "-if", xyzr_path, "-af", out_prefix, "-of", out_prefix],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if p.returncode != 0:
+            raise RuntimeError(f"msms failed:\nSTDOUT:\n{p.stdout}\nSTDERR:\n{p.stderr}")
+
+        result_vert_path = out_prefix + ".vert"
+        if not os.path.exists(result_vert_path):
+            raise FileNotFoundError(f"MSMS did not create {result_vert_path}")
+
+        with open(result_vert_path) as f:
+            for i, line in enumerate(f):
+                if i < 3:
+                    continue
+                parts = line.split()
+                if len(parts) < 9:
+                    continue
+                try:
+                    vals = [float(x) for x in parts[:9]]
+                except ValueError:
+                    continue
+                vert_surface.append(vals)
+        return vert_surface
+    
+    
+    def get_surface_old(self, msms_path=""):
         atom_in_surface = []
         vert_surface = []
         pdb_file = self.file_name
@@ -151,12 +224,17 @@ class MoleculeFeatures(object):
         return vert_surface
 
 def get_surface_feature(vert_surface, protein_pos, mean_protein_pos):
+    """
+    For each surface vertex, get its 3D coordinates, the index of the atom it belongs to, whether it is in the surface, and its relative position to the atom it belongs to
+    """
     if vert_surface.numel() == 0:
         empty_long = torch.empty(0, dtype=torch.long)
         empty_float = torch.empty(0, 3, dtype=protein_pos.dtype)
         atom_in_surface = torch.zeros(protein_pos.shape[0], dtype=protein_pos.dtype)
         vert_num = torch.tensor(0, dtype=torch.long)
         return empty_float, empty_long, vert_num, atom_in_surface, empty_float, empty_long
+
+    
     pos = protein_pos
     vert_pos = vert_surface[:, [0, 1, 2]]
     vert_pos = torch.unique(vert_pos, dim=0)
@@ -177,15 +255,37 @@ def get_surface_feature(vert_surface, protein_pos, mean_protein_pos):
     return vert_pos, vert_atom, vert_num, atom_in_surface, vert_atom_diff, vert_batch
 
 def get_surface_descriptor(pos, vert_pos, vert_atom, atom_in_surface, vert_batch):
+    """
+    For each surface, point, get its local geometric features and its relative position to the surface center
+    and the atom it belongs to
+     
+    For every surface vertex, compute a few features about its local neighbourhood on the surface.
+    and a few features about where it sits relative to the whole surface and relative to the atom it came fromx
+    """
     if vert_pos.shape[0] == 0:
         surface_descriptor = torch.empty(0, 7, dtype=pos.dtype)
         surface_center_pos = torch.empty(0, 3, dtype=pos.dtype)
         return surface_descriptor, surface_center_pos
+    
     tmp_pos = pos[atom_in_surface==1]
+
     # KNN for two nearest surface point
-    assign_index = knn(vert_pos, vert_pos, 3)
-    edge_0 = assign_index[0]
+    #assign_index = knn(vert_pos, vert_pos, 3)
+
+    # --- need to double check what this is doing ---
+    N = vert_pos.shape[0]
+    dist = torch.cdist(vert_pos, vert_pos)
+    dist.fill_diagonal_(float("inf"))
+    nn_idx = dist.topk(k=2, largest=False).indices   # [N, 2]
+    edge_0 = torch.arange(N).repeat_interleave(2)    # source indices
+    edge_1 = nn_idx.reshape(-1)                      # target indices
+    # --- end of double check point ---
+
+    
+    assign_index = torch.stack([edge_0, edge_1], dim=0)   # [2, 2N]
+    edge_0 = assign_index[0] 
     edge_1 = assign_index[1]
+
     mask_edge = (edge_0 == edge_1)
     edge_0 = edge_0[~mask_edge]
     tmp_edge_0 = edge_0.clone()
@@ -193,6 +293,8 @@ def get_surface_descriptor(pos, vert_pos, vert_atom, atom_in_surface, vert_batch
     edge_1 = edge_1[~mask_edge]
     tmp_edge_1 = edge_1.clone()
     edge_1 = vert_pos[edge_1]
+
+
     edge_diff = edge_0 - edge_1
     edge_diff = edge_diff.view(vert_pos.shape[0], 2, 3)
     length_edge_0 = edge_diff[:, 0, :].norm(dim=1).unsqueeze(dim=-1)
@@ -223,30 +325,42 @@ def get_surface_descriptor(pos, vert_pos, vert_atom, atom_in_surface, vert_batch
 
 def get_protein_feature(protein_file_name, msms_path=""):
     protein = MoleculeFeatures(protein_file_name)
+
     if protein.molecule is None:
         raise ValueError(
             f"Could not parse protein structure from '{protein_file_name}'. "
             "Please check that the PDB/MOL2/SDF file is valid."
-        )
-    atoms = protein.molecule.GetAtoms()
+        ) # error for when we cannot get a molecule from the file
+    
+    atoms = protein.molecule.GetAtoms() 
     # get global structure features
-    all_atom_index, all_atom_features, all_atom_pos, all_edge_index, all_edge_attr = protein.get_graph_features()
-    all_atom_pos = torch.tensor(all_atom_pos).float()
-    mean_protein_pos = all_atom_pos.mean(dim=0)
-    all_atom_pos = all_atom_pos - mean_protein_pos
+
+    all_atom_index, all_atom_features, all_atom_pos, all_edge_index, all_edge_attr = protein.get_graph_features() # Get the graph feetures of the protein, including atom features, edge features and 3D coordinates of atoms
+
+    # --- atom positions ---
+
+    all_atom_pos = torch.tensor(all_atom_pos).float() # get the 3D coordinates of atoms as a tensor 
+    mean_protein_pos = all_atom_pos.mean(dim=0) # get the mean position of all atoms in the protein 
+    all_atom_pos = all_atom_pos - mean_protein_pos # center the 3D coordinates of the atoms by subtracting the mean position
+
     # get_surface_features
     vert_surface = protein.get_surface(msms_path=msms_path)
     if len(vert_surface) == 0:
         vert_surface = torch.empty(0, 9).float()
     else:
-        vert_surface = tensor(vert_surface).float()
+        vert_surface = tensor(vert_surface).float() # get the surface vertices as a tensor
+
+    # --- vert positions ---
     vert_pos, vert_atom, vert_num, atom_in_surface, vert_atom_diff, vert_batch = get_surface_feature(vert_surface, all_atom_pos, mean_protein_pos)
     # get_surface_descriptor
     surface_descriptor, surface_center_pos = get_surface_descriptor(all_atom_pos, vert_pos, vert_atom, atom_in_surface, vert_batch)
+
+
     # trans data -> graph data
     all_atom_features = tensor(all_atom_features).float()
     all_edge_index = tensor(all_edge_index)
     all_edge_attr = tensor(all_edge_attr).float()
+    # Create a pytorch geometric data object to store the graph features of the protein, including atom features, edge features, 3D coordinates of atoms, surface vertex features and surface descriptors
     graph_data = Data(x=all_atom_features,
             pos=all_atom_pos,
             edge_index=all_edge_index,
@@ -260,11 +374,13 @@ def get_protein_feature(protein_file_name, msms_path=""):
             vert_batch=vert_batch,
             surface_center_pos=surface_center_pos,
             surface_descriptor=surface_descriptor)
+
     return graph_data
 
 if __name__ == "__main__":
     # pls install msms at first
-    msms_path = ""
-    protein_file_name = "1UYD.pdb"
+    msms_path = "/home/sang/Desktop/msms_i86_64Linux2_2.6.1"
+    protein_file_name = "protein_only.pdb"
     tmp_graph = get_protein_feature(protein_file_name, msms_path=msms_path)
+    print(tmp_graph)
     # Data(x=[1572, 6], edge_index=[2, 3224], edge_attr=[3224, 3], pos=[1572, 3], atom_in_surface=[1572], vert_surface=[10385, 9], vert_pos=[10384, 3], vert_atom=[10384], vert_num=[10384], vert_atom_diff=[10384, 3], vert_batch=[10384], surface_center_pos=[988, 3], surface_descriptor=[10384, 7])
