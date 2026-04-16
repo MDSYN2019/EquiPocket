@@ -210,30 +210,35 @@ class EquiPocket(nn.Module):
                 
                 tmp_node_embedding = node_embedding[new_batch == graph_id] # get the node embedding for the nodes on the surface for the current graph in the batch
 
-                graph_surface_pos = surface_pos[new_batch == graph_id].clone().detach()
+                graph_surface_pos = surface_pos[new_batch == graph_id].clone().detach() # get the position for the nodes on the surface for the current graph in the batch
 
-                edge_index = radius_graph(
-                    graph_surface_pos, r=self.cutoff, max_num_neighbors=999
-                )
+                edge_index = radius_graph( # construct the graph for the nodes on the surface for the current graph in the batch based on the radius graph, which connects the nodes that are within the cutoff idsntace 
+                    graph_surface_pos, r=self.cutoff, max_num_neighbors=999 
+                ) # get the max number of neighbors for each node, which is set to 999 here, which means that will not limit the number of neighbours for each node 
 
                 full_pos = torch.concat(
                     (
-                        surface_pos[new_batch == graph_id].unsqueeze(dim=1),
-                        surface_center_pos[new_batch == graph_id].unsqueeze(dim=1),
+                        surface_pos[new_batch == graph_id].unsqueeze(dim=1), # position of the nodes on the surface 
+                        surface_center_pos[new_batch == graph_id].unsqueeze(dim=1), # position of the surface center
                     ),
                     dim=1,
-                )
+                ) # full position for the nodes on the surface, which is the concatenation of the position of the nodes on the surface and the positoon of the surface center
+                
                 new_node_embedding, new_pos = self.surface_egnn(
                     tmp_node_embedding, full_pos, edge_index, edge_index
-                )
+                ) # pass the node emebedding and the full position through the surface EGNN to get the new node embedding and the new position for the nodes on the surface for the current graph in the batch, which has out_features dimensions for each
+                
                 all_node_embedding.append(new_node_embedding)
                 all_node_pos.append(new_pos)
 
+                print(f"all node embedding shape {new_node_embedding.shape}") 
+                print(f"all node pos shape {new_pos.shape}")
 
                 
             # all out
-            node_embedding = torch.concat(all_node_embedding, dim=0)
-            node_pos = torch.concat(all_node_pos, dim=0)[:, 0]
+            node_embedding = torch.concat(all_node_embedding, dim=0) # concatenate the node embedding after passing through the surface EGNN for each graph in the batch, which has out_features dimensions for each node
+            node_pos = torch.concat(all_node_pos, dim=0)[:, 0] # concatenate the node positions after passing through the surface EGNN for each graph in the batch, which has 3 dimensions for each node, and we only take the first 3 dimensions as the new position for each node
+            
             if self.surface_egnn_depth > 0 and self.dense_attention:
                 tmp_cutoff_ratio = batch_data.cutoff_ratio[
                     batch_data.atom_in_surface == 1
@@ -245,7 +250,7 @@ class EquiPocket(nn.Module):
                 node_embedding = node_embedding * cutoff_attention
                 
         # probability and relative direction
-        y_hat = self.all_out(node_embedding)
+        y_hat = self.all_out(node_embedding)        
         angle = None
         if self.surface_egnn_depth > 0:
             angle = node_pos - pos[atom_in_surface == 1]
@@ -269,3 +274,6 @@ if __name__ == "__main__":
         out_depth=out_depth,
         out_features=out_features,
     )
+
+
+    
