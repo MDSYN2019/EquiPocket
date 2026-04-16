@@ -15,7 +15,6 @@ print(tmp_graph)
 # create the list of the dataset to be fed for the model
 dataset = [tmp_graph, tmp_graph, tmp_graph]
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     
 loader = DataLoader(dataset, batch_size=1, shuffle=False)
 model = EquiPocket(
@@ -31,9 +30,6 @@ model = EquiPocket(
 
 model.eval()
 print(f"Running on device: {device}")
-
-
-
 with torch.no_grad():
     for step, batch in enumerate(loader, start=1):
         batch = batch.to(device)
