@@ -235,6 +235,13 @@ class Baseline_Models(nn.Module):
 
         if self.gat_depth == 0:
             node_embedding = self.trans(new_x)
+        batch_index = getattr(batch_data, "batch", None)
+        if batch_index is None:
+            batch_index = torch.zeros(
+                node_embedding.size(0),
+                dtype=torch.long,
+                device=node_embedding.device,
+            )
         # -- 
         
         # gcn
@@ -258,23 +265,23 @@ class Baseline_Models(nn.Module):
         # schnet
         if self.schnet_depth > 0:
             node_embedding = self.schnet(
-                z=batch_data.x[:, 0], pos=batch_data.pos, batch=batch_data.batch
+                z=batch_data.x[:, 0], pos=batch_data.pos, batch=batch_index
             )
 
         # dimenet
         if self.dimenet_depth > 0:
             node_embedding = self.dimenet(
-                z=node_embedding, pos=batch_data.pos, batch=batch_data.batch
+                z=node_embedding, pos=batch_data.pos, batch=batch_index
             )
 
         # egnn
         if self.egnn_depth > 0:
             all_node_embedding = []
 
-            for graph_id in batch_data.batch.unique():
-                tmp_node_embedding = node_embedding[batch_data.batch == graph_id]
+            for graph_id in batch_index.unique():
+                tmp_node_embedding = node_embedding[batch_index == graph_id]
 
-                tmp_pos = batch_data.pos[batch_data.batch == graph_id]
+                tmp_pos = batch_data.pos[batch_index == graph_id]
 
                 edge_index = radius_graph(tmp_pos, r=5, max_num_neighbors=8)
 

@@ -153,6 +153,11 @@ class EquiPocket(nn.Module):
         atom_in_surface = batch_data.atom_in_surface
         pos = batch_data.pos
         surface_center_pos = batch_data.surface_center_pos
+        batch_index = getattr(batch_data, "batch", None)
+        if batch_index is None:
+            batch_index = torch.zeros(
+                pos.size(0), dtype=torch.long, device=pos.device
+            )
         node_embedding = []
         
         # local geometric embedding
@@ -199,7 +204,7 @@ class EquiPocket(nn.Module):
      
         # Surface passing
         if self.surface_egnn_depth > 0:
-            new_batch = batch_data.batch[atom_in_surface == 1] # get the batch index for the nodes on the surface 
+            new_batch = batch_index[atom_in_surface == 1] # get the batch index for the nodes on the surface 
             surface_pos = batch_data.pos[atom_in_surface == 1]  # get the position for the nodes on the surface 
 
             all_node_embedding = [] # the list to store the node embedding after passing through the surface EGNN for each graph in the batch
