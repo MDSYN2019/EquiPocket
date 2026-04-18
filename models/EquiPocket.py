@@ -13,9 +13,11 @@ from .surface_egnn import SurfaceEGNN
 
 
 def get_cutoff_ratio(pos, cutoff, surface_egnn_depth):
+    """    
+    """
     all_ratio = []
-    dist = torch.cdist(pos, pos)
-    all_atom = pos.shape[0]
+    dist = torch.cdist(pos, pos) # compute the pairwise distance between the nodes on the surface  
+    all_atom = pos.shape[0] # get the number of nodes on the surface 
     all_ratio.append(torch.ones(all_atom, 1).fill_(all_atom).long().to(dist.device))
     for i in range(0, surface_egnn_depth + 1):
         tmp_result = (dist < cutoff * i).sum(dim=1)

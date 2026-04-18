@@ -66,13 +66,13 @@ def build_ligand_contact_labels(
     if contact_cutoff <= 0:
         raise ValueError("contact_cutoff must be positive.")
 
-    protein_pos = _load_pdb_atom_positions(protein_pdb)
-    ligand_pos = _load_pdb_atom_positions(ligand_pdb)
+    protein_pos = _load_pdb_atom_positions(protein_pdb) # [num_protein_atoms, 3] 
+    ligand_pos = _load_pdb_atom_positions(ligand_pdb) # [num_ligand_atoms, 3]
 
     # Pairwise distances: [num_protein_atoms, num_ligand_atoms]
-    dists = torch.cdist(protein_pos, ligand_pos)
-    min_dist_per_protein_atom = dists.min(dim=1).values
-    labels_all_atoms = (min_dist_per_protein_atom <= contact_cutoff).float()
+    dists = torch.cdist(protein_pos, ligand_pos) # Compute the pairwise distances between protein and ligand atoms 
+    min_dist_per_protein_atom = dists.min(dim=1).values  # get the minimum distance to any ligand atom for each protein atom
+    labels_all_atoms = (min_dist_per_protein_atom <= contact_cutoff).float() # binary labels: 1 if in contact, 0 otherwise - returns a float tensor of shape [num_protein_atoms]
 
     if atom_in_surface is None:
         labels_surface_atoms = labels_all_atoms
@@ -85,7 +85,7 @@ def build_ligand_contact_labels(
             )
         surface_mask = atom_in_surface == 1
         labels_surface_atoms = labels_all_atoms[surface_mask]
-
+    
     return labels_all_atoms, labels_surface_atoms
 
 
