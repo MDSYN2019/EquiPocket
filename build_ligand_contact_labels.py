@@ -74,19 +74,19 @@ def build_ligand_contact_labels(
     min_dist_per_protein_atom = dists.min(dim=1).values  # get the minimum distance to any ligand atom for each protein atom
     labels_all_atoms = (min_dist_per_protein_atom <= contact_cutoff).float() # binary labels: 1 if in contact, 0 otherwise - returns a float tensor of shape [num_protein_atoms]
 
-    if atom_in_surface is None:
+    if atom_in_surface is None: # if no surface mask is provided, we consider all atoms as surface atoms for the purpose of labeling
         labels_surface_atoms = labels_all_atoms
-    else:
-        atom_in_surface = atom_in_surface.reshape(-1)
-        if atom_in_surface.shape[0] != labels_all_atoms.shape[0]:
+    else: # if a surface mask is provided, we filter the labels to only include those atoms that are marked as surface atoms (atoms_in_surface == 1)        
+        atom_in_surface = atom_in_surface.reshape(-1) 
+        if atom_in_surface.shape[0] != labels_all_atoms.shape[0]: 
             raise ValueError(
                 "atom_in_surface length mismatch: "
                 f"got {atom_in_surface.shape[0]}, expected {labels_all_atoms.shape[0]}"
             )
         surface_mask = atom_in_surface == 1
-        labels_surface_atoms = labels_all_atoms[surface_mask]
+        labels_surface_atoms = labels_all_atoms[surface_mask] # filter the labels to only include the surface atoms based on the label_all_atoms and the surtface mask
     
-    return labels_all_atoms, labels_surface_atoms
+    return labels_all_atoms, labels_surface_atoms # return the labels for all atoms and the labels for only the surface atoms (if a surface mask is provided)
 
 
 def main() -> None:
