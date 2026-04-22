@@ -245,6 +245,23 @@ pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_geometric \
 python -c "import torch; import torch_geometric, torch_sparse, torch_scatter, torch_cluster; print(torch.__version__, 'PyG stack OK')"
 
 # 7) Run the end-to-end training script
+
+# 2) Install PyTorch (choose one)
+# GPU (CUDA 11.8)
+conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia -y
+# OR CPU only
+# conda install pytorch cpuonly -c pytorch -y
+
+# 3) Install PyTorch Geometric + ops from conda-forge
+conda install pyg -c pyg -c conda-forge -y
+
+# 4) Install RDKit + scientific deps
+conda install -c conda-forge rdkit mdanalysis biopython numpy scikit-learn tqdm ase -y
+
+# 5) Install remaining pip-only deps
+pip install -r requirements.txt
+
+# 6) Run the end-to-end training script
 python end_to_end_pipeline.py
 ```
 
