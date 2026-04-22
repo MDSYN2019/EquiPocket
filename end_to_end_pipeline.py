@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from tqdm import tqdm
 import torch
 import torch.nn.functional as F
+import wandb
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
@@ -35,6 +36,9 @@ class TrainConfig:
     weight_decay: float = 5e-4
     val_ratio: float = 0.2
     random_seed: int = 42
+    use_wandb: bool = True
+    wandb_project: str = "equipocket"
+    wandb_run_name: str = "end_to_end_pipeline"
 
 def _split_mask(num_nodes: int, val_ratio: float, seed: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Build train/val boolean masks for node-level supervision."""
@@ -133,6 +137,23 @@ if __name__ == "__main__":
         f"negatives: {int((1 - graph.y).sum().item())}"
     )
 
+    wandb_run = None
+    if cfg.use_wandb:
+        wandb_run = wandb.init(
+            project=cfg.wandb_project,
+            name=cfg.wandb_run_name,
+            config={
+                "epochs": cfg.epochs,
+                "batch_size": cfg.batch_size,
+                "learning_rate": cfg.learning_rate,
+                "weight_decay": cfg.weight_decay,
+                "val_ratio": cfg.val_ratio,
+                "contact_cutoff": cfg.contact_cutoff,
+                "random_seed": cfg.random_seed,
+            },
+        )
+        wandb.watch(model, log="all", log_freq=10)
+
     for epoch in tqdm(range(1, cfg.epochs + 1), desc="Training"):
         model.train()
         epoch_loss = 0.0
@@ -167,3 +188,16 @@ if __name__ == "__main__":
             f"Epoch {epoch:03d} | Loss: {epoch_loss / len(loader):.4f} | "
             f"Train Acc: {train_acc.item():.3f} | Val Acc: {val_acc.item():.3f}"
         )
+
+        if wandb_run is not None:
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train/loss": epoch_loss / len(loader),
+                    "train/acc": train_acc.item(),
+                    "val/acc": val_acc.item(),
+                }
+            )
+
+    if wandb_run is not None:
+        wandb_run.finish()
