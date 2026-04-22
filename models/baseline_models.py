@@ -1,7 +1,42 @@
 import torch
 import torch.nn as nn
 from torch.nn import Embedding
-from torch_geometric.nn import GATConv, GCNConv, GINConv, GCN2Conv, radius_graph
+from torch_geometric.nn import GATConv, GCNConv, GINConv, GCN2Conv
+
+try:
+    from torch_geometric.nn import radius_graph as pyg_radius_graph
+except ImportError:  # torch-cluster is optional at runtime.
+    pyg_radius_graph = None
+
+
+def safe_radius_graph(pos, r, max_num_neighbors=32):
+    """Create a radius graph with a torch-only fallback when torch-cluster is unavailable."""
+    if pyg_radius_graph is not None:
+        return pyg_radius_graph(pos, r=r, max_num_neighbors=max_num_neighbors)
+
+    num_nodes = pos.size(0)
+    if num_nodes == 0:
+        return torch.empty((2, 0), dtype=torch.long, device=pos.device)
+
+    # Pairwise distances and radius mask (exclude self loops).
+    dists = torch.cdist(pos, pos)
+    radius_mask = (dists <= r) & (~torch.eye(num_nodes, dtype=torch.bool, device=pos.device))
+
+    # Enforce max neighbors per source node (same convention as radius_graph).
+    if max_num_neighbors is not None and max_num_neighbors > 0:
+        topk = torch.topk(
+            dists.masked_fill(~radius_mask, float("inf")),
+            k=min(max_num_neighbors, num_nodes - 1),
+            largest=False,
+            dim=1,
+        ).indices
+        knn_mask = torch.zeros_like(radius_mask)
+        row_ids = torch.arange(num_nodes, device=pos.device).unsqueeze(1).expand_as(topk)
+        knn_mask[row_ids, topk] = True
+        radius_mask = radius_mask & knn_mask
+
+    src, dst = torch.where(radius_mask)
+    return torch.stack([src, dst], dim=0)
 
 
 class embed_atom_chem(torch.nn.Module):
@@ -283,7 +318,7 @@ class Baseline_Models(nn.Module):
 
                 tmp_pos = batch_data.pos[batch_index == graph_id]
 
-                edge_index = radius_graph(tmp_pos, r=5, max_num_neighbors=8)
+                edge_index = safe_radius_graph(tmp_pos, r=5, max_num_neighbors=8)
 
                 edge_attr = torch.ones_like(edge_index[0])
 

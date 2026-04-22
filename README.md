@@ -126,32 +126,14 @@ print(sample)
 
 ### DataLoader usage with EquiPocket (multi-protein batching)
 The model is designed to receive a **batched PyG `Data` object** from `torch_geometric.loader.DataLoader`.  
-A runnable script is provided at `exmaples/dataloader_equipocket_example.py`.
+A runnable script is provided at `examples/dataloader_equipocket_example.py`.
 Run it with:
 
 ```bash
-python exmaples/dataloader_equipocket_example.py
+python examples/dataloader_equipocket_example.py
 ```
 
 The script builds synthetic `Data` samples with the fields EquiPocket expects, batches them with `DataLoader`, and runs a forward pass.
-Below is the key model setup used there:
-
-```python
-import torch
-from models.EquiPocket import EquiPocket
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = EquiPocket(
-    local_geometric_modeling=False,
-    global_structure_modeling="gat_egnn",
-    surface_egnn_depth=2,
-    dense_attention=False,
-    cutoff=6,
-    out_depth=2,
-    out_features=64,
-).to(device)
-model.eval()
-=======
 Below is a minimal pattern that matches how `EquiPocket` is consumed in code.
 
 ```python
@@ -221,7 +203,7 @@ Use this setup if you want to run the full end-to-end script with minimal packag
 conda create -n equipocket python=3.10 -y
 conda activate equipocket
 
-# 2) Install PyTorch first (choose one)
+# 2) Install PyTorch (choose one)
 # GPU (CUDA 11.8)
 conda install pytorch=2.2.* pytorch-cuda=11.8 -c pytorch -c nvidia -y
 # OR CPU only
@@ -245,29 +227,13 @@ pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_geometric \
 python -c "import torch; import torch_geometric, torch_sparse, torch_scatter, torch_cluster; print(torch.__version__, 'PyG stack OK')"
 
 # 7) Run the end-to-end training script
-
-# 2) Install PyTorch (choose one)
-# GPU (CUDA 11.8)
-conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia -y
-# OR CPU only
-# conda install pytorch cpuonly -c pytorch -y
-
-# 3) Install PyTorch Geometric + ops from conda-forge
-conda install pyg -c pyg -c conda-forge -y
-
-# 4) Install RDKit + scientific deps
-conda install -c conda-forge rdkit mdanalysis biopython numpy scikit-learn tqdm ase -y
-
-# 5) Install remaining pip-only deps
-pip install -r requirements.txt
-
-# 6) Run the end-to-end training script
 python end_to_end_pipeline.py
 ```
 
 Notes:
 - If you see an `undefined symbol` error from `torch_sparse`, your `torch` and PyG wheels are ABI-mismatched. Reinstall step 5 with the wheel URL that matches your torch/CUDA build.
 - If you see `ModuleNotFoundError: No module named "torch_sparse"`, rerun step 5 and make sure you are in the active Conda env (`conda activate equipocket`).
+- If you see `ImportError: 'radius_graph' requires 'torch-cluster'`, install `torch_cluster` from the matching PyG wheel URL in step 5.
 - `end_to_end_pipeline.py` requires a working MSMS binary and path (`TrainConfig.msms_path`).
 - If you do not want experiment tracking, set `use_wandb=False` in `TrainConfig`.
 
