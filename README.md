@@ -208,10 +208,41 @@ Practical notes:
 - `surface_descriptor`: 7D geometric descriptor per surface vertex `[num_vertices, 7]`
 
 ## Dependency
- - python: 3.7
- - cuda: 11.6
+ - python: 3.10 (recommended for current PyTorch/PyG stacks)
+ - cuda: optional (GPU strongly recommended for training)
  - python packages: requirements.txt
  - MSMS: https://ccsb.scripps.edu/msms/
+
+## Conda installation (recommended for `end_to_end_pipeline.py`)
+Use this setup if you want to run the full end-to-end script with minimal package friction.
+
+```bash
+# 1) Create and activate environment
+conda create -n equipocket python=3.10 -y
+conda activate equipocket
+
+# 2) Install PyTorch (choose one)
+# GPU (CUDA 11.8)
+conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia -y
+# OR CPU only
+# conda install pytorch cpuonly -c pytorch -y
+
+# 3) Install PyTorch Geometric + ops from conda-forge
+conda install pyg -c pyg -c conda-forge -y
+
+# 4) Install RDKit + scientific deps
+conda install -c conda-forge rdkit mdanalysis biopython numpy scikit-learn tqdm ase -y
+
+# 5) Install remaining pip-only deps
+pip install -r requirements.txt
+
+# 6) Run the end-to-end training script
+python end_to_end_pipeline.py
+```
+
+Notes:
+- `end_to_end_pipeline.py` requires a working MSMS binary and path (`TrainConfig.msms_path`).
+- If you do not want experiment tracking, set `use_wandb=False` in `TrainConfig`.
 
 
 ## Datasets
