@@ -10,4 +10,4 @@ Bio==1.5.3
 numpy==1.21.5
 MDAnalysis==2.5.0
 rdkit==2022.9.4
-
+wandb==0.17.8
