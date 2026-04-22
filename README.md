@@ -221,6 +221,31 @@ Use this setup if you want to run the full end-to-end script with minimal packag
 conda create -n equipocket python=3.10 -y
 conda activate equipocket
 
+# 2) Install PyTorch first (choose one)
+# GPU (CUDA 11.8)
+conda install pytorch=2.2.* pytorch-cuda=11.8 -c pytorch -c nvidia -y
+# OR CPU only
+# conda install pytorch=2.2.* cpuonly -c pytorch -y
+
+# 3) Install RDKit + scientific deps
+conda install -c conda-forge rdkit mdanalysis biopython numpy scikit-learn tqdm ase -y
+
+# 4) Install project Python deps (requirements intentionally excludes torch/pyg binaries)
+pip install -r requirements.txt
+
+# 5) Install PyG wheels that match your installed torch build
+# GPU CUDA 11.8
+pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_geometric \
+  -f https://data.pyg.org/whl/torch-2.2.0+cu118.html
+# OR CPU-only
+# pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_geometric \
+#   -f https://data.pyg.org/whl/torch-2.2.0+cpu.html
+
+# 6) Quick sanity check: these imports must all succeed
+python -c "import torch; import torch_geometric, torch_sparse, torch_scatter, torch_cluster; print(torch.__version__, 'PyG stack OK')"
+
+# 7) Run the end-to-end training script
+
 # 2) Install PyTorch (choose one)
 # GPU (CUDA 11.8)
 conda install pytorch pytorch-cuda=11.8 -c pytorch -c nvidia -y
@@ -241,6 +266,8 @@ python end_to_end_pipeline.py
 ```
 
 Notes:
+- If you see an `undefined symbol` error from `torch_sparse`, your `torch` and PyG wheels are ABI-mismatched. Reinstall step 5 with the wheel URL that matches your torch/CUDA build.
+- If you see `ModuleNotFoundError: No module named "torch_sparse"`, rerun step 5 and make sure you are in the active Conda env (`conda activate equipocket`).
 - `end_to_end_pipeline.py` requires a working MSMS binary and path (`TrainConfig.msms_path`).
 - If you do not want experiment tracking, set `use_wandb=False` in `TrainConfig`.
 
